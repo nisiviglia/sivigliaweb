@@ -94,9 +94,6 @@ class Nav extends React.Component {
                     <a style={this.state.styles.side.a} href="#">About</a>
                     <a style={this.state.styles.side.a} href="#">Contact</a> 
                 </div>
-                <div>
-                    //body here
-                </div>
             </div>
         );
 
