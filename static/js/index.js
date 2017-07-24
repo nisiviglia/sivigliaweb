@@ -1,9 +1,20 @@
 //
 //Blog page
 //
+class Blog extends React.Component {
+    constructor() {
+        super();
+    }
 
+    render() {
+        return(
+            <div>
+            
+            </div>
+        );
+    }
 
-
+}
 
 //
 //Projects page
@@ -24,7 +35,7 @@ class Label extends React.Component {
                     width: "30px",
                     height: "30px",
                     borderRadius: "50%",
-                    fontSize: "18px",
+                    fontSize: "15px",
                     color: "#000",
                     lineHeight: "30px",
                     textAlign: "center",
@@ -113,25 +124,29 @@ class Projects extends React.Component {
         .then((repos) => {
             let data = [];
             for (let i = 0; i < repos.length; i++){
-                data.push([repos[i].id, repos[i].name
-                        , repos[i].description, repos[i].language]);
+                data.push([repos[i].id, repos[i].name,
+                         repos[i].description, repos[i].language]);
             }
             this.setState({data});
         })
 
         .catch((err) => {
-            console.log("Fetch Error :-S", err);
+            console.log("Fetch Error: ", err);
         });
     }
     
     createCard(repo){
-       return <Card key={repo[0]} title={repo[1]} dis={repo[2]} lang={repo[3]}/>
+       return <Card key={repo[0]} title={repo[1]} dis={repo[2]} lang={repo[3]}/>;
+    }
+
+    apiLoadingMsg(){
+        return <h2>Loading...</h2>;
     }
 
     render() {
         return (
         <div>
-            {this.state.data.map(this.createCard)}
+            {this.state.data.length > 0 ? this.state.data.map(this.createCard) : this.apiLoadingMsg()}
         </div>
         );
     }
@@ -146,7 +161,6 @@ class Nav extends React.Component {
         this.clickOpenNav = this.clickOpenNav.bind(this);
         this.clickCloseNav = this.clickCloseNav.bind(this);
         this.state = {
-
              styles: {
                 all: {
                     fontFamily: "Lato, sams-serif",
