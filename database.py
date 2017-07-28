@@ -5,7 +5,7 @@ import datetime
 client = MongoClient("localhost", 27017, serverSelectionTimeoutMS=5000)
 db = client.test
 
-def newPost(title, discr, text, tags):
+def newPost(title, discr, text, tags=None):
     try:
         post = {"date" : datetime.datetime.utcnow(),
                 "title" : title,
@@ -19,7 +19,7 @@ def newPost(title, discr, text, tags):
     except mongoerrors.PyMongoError as e:
         return("Database insert failed: " + str(e))
 
-def updatePostById(postId, nti, ndi, nte, nta, nv):
+def updatePostById(postId=None, nti=None, ndi=None, nte=None, nta=None, nv=None):
     post = {"title": nti,
             "discr": ndi,
             "text": nte,
@@ -41,19 +41,14 @@ def deletePostById(postId):
     except mongoerrors.PyMongoError as e:
         return("Database remove failed: " + str(e))
 
-def getPostPreviews(n):
+def getPostPreviews(n, afterId=None):
     try:
-        curser = db.posts.find({'$query': {},
-            '$orderby': {'_id': -1}}, {"text": 0}).limit(n)
-        return [post for post in curser]
-
-    except mongoerrors.PyMongoError as e:
-        return("Database get post previews failed: " + str(e))
-
-def getPostPreviews(n, afterId):
-    try:
-        curser = db.posts.find({'$query': {'_id': {'$gt': ObjectId(afterId)}},
-            '$orderby': {'_id': -1}}, {"text": 0}).limit(n)
+        if(afterId == None):
+            curser = db.posts.find({'$query': {},
+                '$orderby': {'_id': -1}}, {"text": 0}).limit(n)
+        else:
+            curser = db.posts.find({'$query': {'_id': {'$gt': ObjectId(afterId)}},
+                '$orderby': {'_id': -1}}, {"text": 0}).limit(n)
         return [post for post in curser]
 
     except mongoerrors.PyMongoError as e:
@@ -61,7 +56,7 @@ def getPostPreviews(n, afterId):
 
 def getPostById(postId):
     try:
-        return  db.posts.find_one({'_id': ObjectId(postId)})
+        return db.posts.find_one({'_id': ObjectId(postId)})
 
     except mongoerrors.PyMongoError as e:
         return("Database get post failed: " + str(e))
@@ -72,3 +67,9 @@ def getPostByTitle(title):
 
     except mongoerrors.PyMongoError as e:
         return("Database get post failed: " + str(e))
+
+
+
+
+
+
