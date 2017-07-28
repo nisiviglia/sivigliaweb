@@ -24,8 +24,11 @@ class PostSchema(Schema):
     text = fields.Str(error='invalid text body')
     tags = fields.List(fields.Str())
     visable = fields.Int(validate=validate.Range(min=0, max=1))
-
 post_schema = PostSchema()
+
+class PostAmountSchema(Schema):
+    amount = fields.Int(validate=validate.Range(min=0, max=50))
+postAmount_schema = PostAmountSchema()
 
 #########################
 # Api
@@ -35,11 +38,24 @@ class BlogApi(Resource):
         curser = None
         try:
             curser = db.posts.find({'$query': {},
-                '$orderby': {'_id': -1}}, {"text": 0}).limit(50)
+                '$orderby': {'_id': -1}}, {"text": 0}).limit(20)
         except mongoerrors.PyMongoError as e:
             return("Database get post previews after failed: " + str(e))
-        return dumps([post for post in curser])
+        return dumps([post for post in curser]), 200
 api.add_resource(BlogApi, '/blog/')
+
+class BlogAmountApi(Resource):
+    def get(self, amount):
+        data, errors = postAmount_schema.load({'amount': amount})
+        if errors:
+            return dumps({'errors': errors}), 400
+        try:
+            curser = db.posts.find({'$query': {},
+                '$orderby': {'_id': -1}}, {"text": 0}).limit(data['amount'])
+        except mongoerrors.PyMongoError as e:
+            post = {'errors': e}
+        return dumps([post for post in curser]), 200
+api.add_resource(BlogAmountApi, '/blog/<amount>')
 
 class BlogIdApi(Resource):
     def get(self, postId):
@@ -50,7 +66,32 @@ class BlogIdApi(Resource):
             post = db.posts.find_one({'_id': ObjectId(data['postId'])})
         except mongoerrors.PyMongoError as e:
             post = {'errors': e}
-        return dumps(post)
+        return dumps(post), 200
+
+    def put(self, postId):
+        json_data = request.get_json()
+        json_data['postId'] = postId
+        data, errors = post_schema.load(json_data)
+        if errors:
+            return dumps({'errors': errors}), 400
+        try:
+            post = db.posts.update_one({'_id': ObjectId(data['postId'])},
+                {'$set': data})
+            post = {'modified count': post.modified_count}
+        except mongoerrors.PyMongoError as e:
+            post = {'errors': e}
+        return dumps(post), 201
+
+    def delete(self, postId):
+        data, errors = post_schema.load({'postId': postId})
+        if errors:
+            return dumps({'errors': errors}), 400
+        try:
+            post = db.posts.delete_one({'_id': ObjectId(data['postId'])})
+            post = post.deleted_count
+        except mongoerrors.PyMongoError as e:
+            post = {'errors': e}
+        return dumps(post), 201
 api.add_resource(BlogIdApi,  '/blog/id/<postId>')
 
 class BlogAfterIdApi(Resource):
@@ -62,10 +103,10 @@ class BlogAfterIdApi(Resource):
         try:
             curser = db.posts.find({'$query': {'_id': {'$gt':
                 ObjectId(data['postId'])}},
-                '$orderby': {'_id': -1}}, {"text": 0}).limit(50)
+                '$orderby': {'_id': -1}}, {"text": 0}).limit(20)
         except mongoerrors.PyMongoError as e:
             post = {'errors': e}
-        return [post for post in curser]
+        return [post for post in curser], 200
 api.add_resource(BlogAfterIdApi, '/blog/id/after/<afterId>')
 
 class BlogTitleApi(Resource):
@@ -77,7 +118,7 @@ class BlogTitleApi(Resource):
             post = db.posts.find_one({'title': data['title']})
         except mongoerrors.PyMongoError as e:
             post = {'errors': e}
-        return dumps(post)
+        return dumps(post), 200
 
     def post(self, title):
         json_data = request.get_json()
@@ -91,8 +132,31 @@ class BlogTitleApi(Resource):
             post = db.posts.insert_one(data).inserted_id
         except mongoerrors.PyMongoError as e:
             post = {'errors': e}
-        return dumps(post)
+        return dumps(post), 201
 
+    def put(self, title):
+        json_data = request.get_json()
+        data, errors = post_schema.load(json_data)
+        if errors:
+            return dumps({'errors': errors}), 400
+        try:
+            post = db.posts.update_one({'title': data['title']},
+                {'$set': data})
+            post = {'modified count': post.modified_count}
+        except mongoerrors.PyMongoError as e:
+            post = {'errors': e}
+        return dumps(post), 201
+
+    def delete(self, title):
+        data, errors = post_schema.load({'title': title})
+        if errors:
+            return dumps({'errors': errors}), 400
+        try:
+            post = db.posts.delete_one({'title': data['title']})
+            post = post.deleted_count
+        except mongoerrors.PyMongoError as e:
+            post = {'errors': e}
+        return dumps(post), 201
 api.add_resource(BlogTitleApi,  '/blog/title/<title>')
 
 #########################
