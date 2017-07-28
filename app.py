@@ -1,7 +1,7 @@
-import datetime
 from bson.objectid import ObjectId
 from bson.json_util import dumps , loads
-from flask import Flask, render_template
+from datetime import datetime
+from flask import Flask, render_template, request
 from flask_restful import Api, Resource
 from marshmallow import fields, Schema, validate
 from pymongo import errors as mongoerrors, MongoClient
@@ -18,10 +18,10 @@ db = client.test
 class PostSchema(Schema):
     postId = fields.Str(validate=validate.Regexp(regex='[0-9a-fA-F]{24}',
         error='invalid post id'))
-    date = fields.Date()
-    title = fields.Str()
-    discr = fields.Str()
-    text = fields.Str()
+    date = fields.DateTime()
+    title = fields.Str(error='invalid title')
+    discr = fields.Str(error='invalid discription')
+    text = fields.Str(error='invalid text body')
     tags = fields.List(fields.Str())
     visable = fields.Int(validate=validate.Range(min=0, max=1))
 
@@ -58,8 +58,10 @@ class BlogAfterIdApi(Resource):
         data, errors = post_schema.load({'postId': afterId})
         if errors:
             return dumps({'errors': errors}), 400
+        curser = None
         try:
-            curser = db.posts.find({'$query': {'_id': {'$gt': ObjectId(afterId)}},
+            curser = db.posts.find({'$query': {'_id': {'$gt':
+                ObjectId(data['postId'])}},
                 '$orderby': {'_id': -1}}, {"text": 0}).limit(50)
         except mongoerrors.PyMongoError as e:
             post = {'errors': e}
@@ -76,8 +78,22 @@ class BlogTitleApi(Resource):
         except mongoerrors.PyMongoError as e:
             post = {'errors': e}
         return dumps(post)
-api.add_resource(BlogTitleApi,  '/blog/title/<title>')
 
+    def post(self, title):
+        json_data = request.get_json()
+        json_data['date'] = datetime.utcnow().isoformat()
+        json_data['title'] = title
+        json_data['visable'] = 0
+        data, errors = post_schema.load(json_data)
+        if errors:
+            return dumps({'errors': errors}), 400
+        try:
+            post = db.posts.insert_one(data).inserted_id
+        except mongoerrors.PyMongoError as e:
+            post = {'errors': e}
+        return dumps(post)
+
+api.add_resource(BlogTitleApi,  '/blog/title/<title>')
 
 #########################
 # Routes
