@@ -2,6 +2,7 @@ from bson.objectid import ObjectId
 from bson.json_util import dumps , loads
 from datetime import datetime, timedelta
 from flask import Flask, render_template, request
+from flask_httpauth import HTTPBasicAuth, HTTPTokenAuth
 from flask_restful import Api, Resource
 from marshmallow import fields, Schema, validate, validates, validates_schema, ValidationError
 from pymongo import errors as mongoerrors, MongoClient
@@ -13,9 +14,63 @@ import jwt
 app = Flask(__name__)
 app.config['TEMPLATES_AUTO_RELOAD'] = True
 api = Api(app)
+basic_auth = HTTPBasicAuth()
+token_auth = HTTPTokenAuth('Bearer')
+SECRET_KEY = "\xb3\x15[\xe9d\xe8\xd6\x1e\xf0%\x12/\xd5\xcd\x0eru\x15\xda$\xdb\xb3II]"
 client = MongoClient("localhost", 27017, serverSelectionTimeoutMS=5000)
 db = client.test
-SECRET_KEY = "\xb3\x15[\xe9d\xe8\xd6\x1e\xf0%\x12/\xd5\xcd\x0eru\x15\xda$\xdb\xb3II]"
+
+#########################
+# Auth
+#########################
+@token_auth.verify_token
+def decode_auth_token(token):
+    """
+    Decodes the auth token
+    :input string
+    :return: bool
+    """
+    try:
+        payload = jwt.decode(token, SECRET_KEY)
+        return True
+    except jwt.ExpiredSignatureError:
+        return False
+    except jwt.InvalidTokenError:
+        return False
+
+def encode_auth_token(user):
+    """
+    Generates the Auth Token
+    :input string
+    :return string
+    """
+    payload = {
+        'exp': datetime.utcnow() +
+            timedelta(days=1, seconds=1),
+        'iat': datetime.utcnow(),
+        'sub': user
+    }
+    return jwt.encode(
+            payload,
+            SECRET_KEY,
+            algorithm='HS512'
+    )
+
+@basic_auth.get_password
+def get_password(user):
+    '''
+    Grabs password from database for HTTPBasicAuth.
+    :input string
+    :returns string
+    '''
+    try:
+        result = db.users.find_one({'$query': {'user': user}}, {'password': 1})
+        if result:
+            return result['password']
+        else:
+            return None
+    except mongoerrors.PyMongoError as e:
+        return None
 
 #########################
 # Schema
@@ -35,85 +90,20 @@ class PostAmountSchema(Schema):
     amount = fields.Int(validate=validate.Range(min=0, max=50))
 postAmount_schema = PostAmountSchema()
 
-class UserSchema(Schema):
-    name = fields.Str()
-    password = fields.Str()
-    token = fields.Str()
-
-    @validates_schema
-    def validate_user(self, data):
-        """
-        Taken is generated upon successful validation of user & pass.
-        If token is supplied then token is validated and user & pass is ignored.
-        """
-        if 'token' in data:
-             result = self.__decode_auth_token(data['token'])
-             if 'errors' in result:
-                 raise ValidationError(result['errors'])
-        else:
-            try:
-                user = db.users.find_one({'$and': [{'user': data['name']},
-                        {'password': data['password']}]})
-            except mongoerrors.PyMongoError as e:
-                raise ValidationError(str(e))
-            except KeyError:
-                raise ValidationError('missing username or password')
-            if user == None:
-                raise ValidationError('invalid username or password')
-            data['token'] = self.__encode_auth_token(str(user['_id']))
-            return data;
-
-    def __encode_auth_token(self, objectid):
-        """
-        Generates the Auth Token
-        :input objectid
-        :return string
-        """
-        payload = {
-            'exp': datetime.utcnow() +
-                timedelta(days=1, seconds=5),
-            'iat': datetime.utcnow(),
-            'sub': objectid
-        }
-        return jwt.encode(
-                payload,
-                SECRET_KEY,
-                algorithm='HS256'
-        )
-
-    def __decode_auth_token(self, token):
-        """
-        Decodes the auth token
-        :return: integerstring
-        """
-        try:
-            payload = jwt.decode(token, SECRET_KEY)
-            return {'exp': payload['exp']}
-        except jwt.ExpiredSignatureError:
-            return {'errors': 'token expired'}
-        except jwt.InvalidTokenError:
-            return {'errors': 'invalid token'}
-user_schema = UserSchema()
-
 #########################
 # Api
 #########################
 class LoginApi(Resource):
-    def post(self):
-        json_data = request.get_json()
-        data, errors = user_schema.load(json_data)
-        if errors:
-            return dumps({'errors': errors}), 400
-        return dumps({'token': data['token']}), 201
-api.add_resource(LoginApi, '/admin/')
+    @basic_auth.login_required
+    def get(self):
+        return dumps({'token': encode_auth_token(basic_auth.username())})
+api.add_resource(LoginApi, '/api/v1/login/')
 
 class TestToken(Resource):
-    def get(self, token):
-        data, errors = user_schema.load({'token': token})
-        if errors:
-            return dumps({'errors': errors}), 400
+    @token_auth.login_required
+    def get(self):
         return dumps({'success': "good token"})
-api.add_resource(TestToken, '/testToken/<token>')
+api.add_resource(TestToken, '/api/v1/testToken/')
 
 class BlogApi(Resource):
     def get(self):
@@ -123,7 +113,7 @@ class BlogApi(Resource):
         except mongoerrors.PyMongoError as e:
             post = {'errors': e}
         return dumps([post for post in curser]), 200
-api.add_resource(BlogApi, '/blog/')
+api.add_resource(BlogApi, '/api/v1/blog/')
 
 class BlogAmountApi(Resource):
     def get(self, amount):
@@ -136,7 +126,7 @@ class BlogAmountApi(Resource):
         except mongoerrors.PyMongoError as e:
             post = {'errors': e}
         return dumps([post for post in curser]), 200
-api.add_resource(BlogAmountApi, '/blog/<amount>')
+api.add_resource(BlogAmountApi, '/api/v1/blog/<amount>')
 
 class BlogIdApi(Resource):
     def get(self, postId):
@@ -173,7 +163,7 @@ class BlogIdApi(Resource):
         except mongoerrors.PyMongoError as e:
             post = {'errors': e}
         return dumps(post), 201
-api.add_resource(BlogIdApi,  '/blog/id/<postId>')
+api.add_resource(BlogIdApi,  '/api/v1/blog/id/<postId>')
 
 class BlogAfterIdApi(Resource):
     def get(self, afterId):
@@ -188,7 +178,7 @@ class BlogAfterIdApi(Resource):
         except mongoerrors.PyMongoError as e:
             post = {'errors': e}
         return [post for post in curser], 200
-api.add_resource(BlogAfterIdApi, '/blog/id/after/<afterId>')
+api.add_resource(BlogAfterIdApi, '/api/v1/blog/id/after/<afterId>')
 
 class BlogTitleApi(Resource):
     def get(self, title):
@@ -238,7 +228,7 @@ class BlogTitleApi(Resource):
         except mongoerrors.PyMongoError as e:
             post = {'errors': e}
         return dumps(post), 201
-api.add_resource(BlogTitleApi,  '/blog/title/<title>')
+api.add_resource(BlogTitleApi,  '/api/v1/blog/title/<title>')
 
 #########################
 # Routes
