@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 from flask import Flask, render_template, request
 from flask_httpauth import HTTPBasicAuth, HTTPTokenAuth
 from flask_restful import Api, Resource
-from marshmallow import fields, Schema, validate, validates, validates_schema, ValidationError
+from marshmallow import fields, Schema, validate
 from pymongo import errors as mongoerrors, MongoClient
 import jwt
 
@@ -12,7 +12,6 @@ import jwt
 # Config
 #########################
 app = Flask(__name__)
-app.config['TEMPLATES_AUTO_RELOAD'] = True
 api = Api(app)
 basic_auth = HTTPBasicAuth()
 token_auth = HTTPTokenAuth('Bearer')
@@ -99,12 +98,6 @@ class LoginApi(Resource):
         return dumps({'token': encode_auth_token(basic_auth.username())})
 api.add_resource(LoginApi, '/api/v1/login/')
 
-class TestToken(Resource):
-    @token_auth.login_required
-    def get(self):
-        return dumps({'success': "good token"})
-api.add_resource(TestToken, '/api/v1/testToken/')
-
 class BlogApi(Resource):
     def get(self):
         try:
@@ -139,6 +132,7 @@ class BlogIdApi(Resource):
             post = {'errors': e}
         return dumps(post), 200
 
+    @token_auth.login_required
     def put(self, postId):
         json_data = request.get_json()
         json_data['postId'] = postId
@@ -153,6 +147,7 @@ class BlogIdApi(Resource):
             post = {'errors': e}
         return dumps(post), 201
 
+    @token_auth.login_required
     def delete(self, postId):
         data, errors = post_schema.load({'postId': postId})
         if errors:
@@ -191,6 +186,7 @@ class BlogTitleApi(Resource):
             post = {'errors': e}
         return dumps(post), 200
 
+    @token_auth.login_required
     def post(self, title):
         json_data = request.get_json()
         json_data['date'] = datetime.utcnow().isoformat()
@@ -205,6 +201,7 @@ class BlogTitleApi(Resource):
             post = {'errors': e}
         return dumps(post), 201
 
+    @token_auth.login_required
     def put(self, title):
         json_data = request.get_json()
         data, errors = post_schema.load(json_data)
@@ -218,6 +215,7 @@ class BlogTitleApi(Resource):
             post = {'errors': e}
         return dumps(post), 201
 
+    @token_auth.login_required
     def delete(self, title):
         data, errors = post_schema.load({'title': title})
         if errors:
