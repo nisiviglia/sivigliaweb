@@ -231,9 +231,10 @@ api.add_resource(BlogTitleApi,  '/api/v1/blog/title/<title>')
 #########################
 # Routes
 #########################
-@app.route("/")
-def main():
-    return render_template('index.html')
+@app.route('/', defaults={'path': ''})
+@app.route('/<path:path>')
+def main(path):
+    return render_template('index.html', url_path=path)
 
 #########################
 # Misc
