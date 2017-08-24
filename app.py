@@ -1,7 +1,7 @@
 from bson.objectid import ObjectId
 from bson.json_util import dumps , loads
 from datetime import datetime, timedelta
-from flask import Flask, render_template, request
+from flask import abort, Flask, render_template, request, Response
 from flask_httpauth import HTTPBasicAuth, HTTPTokenAuth
 from flask_restful import Api, Resource
 from marshmallow import fields, Schema, validate
@@ -12,12 +12,15 @@ import jwt
 # Config
 #########################
 app = Flask(__name__)
+app.config.from_object('config.DevelopmentConfig')
+app.config.from_envvar('SIVIGLIAWEB_CONFIG', silent=True)
+SECRET_KEY = app.config['SECRET_KEY']
 api = Api(app)
 basic_auth = HTTPBasicAuth()
 token_auth = HTTPTokenAuth('Bearer')
-SECRET_KEY = "\xb3\x15[\xe9d\xe8\xd6\x1e\xf0%\x12/\xd5\xcd\x0eru\x15\xda$\xdb\xb3II]"
-client = MongoClient("localhost", 27017, serverSelectionTimeoutMS=5000)
-db = client.test
+client = MongoClient(app.config['DATABASE_URL'])
+db = client.get_default_database()
+MAX_GET_POSTS = 20;
 
 #########################
 # Auth
@@ -95,42 +98,48 @@ postAmount_schema = PostAmountSchema()
 class LoginApi(Resource):
     @basic_auth.login_required
     def get(self):
-        return dumps({'token': encode_auth_token(basic_auth.username())})
+        return Response(dumps({'token': encode_auth_token(basic_auth.username())}),
+                mimetype='application/json', status_code='200')
 api.add_resource(LoginApi, '/api/v1/login/')
 
 class BlogApi(Resource):
     def get(self):
         try:
             curser = db.posts.find({'$query': {},
-                '$orderby': {'_id': -1}}, {"text": 0}).limit(20)
+                '$orderby': {'_id': -1}}, {"text": 0}).limit(MAX_GET_POSTS)
         except mongoerrors.PyMongoError as e:
             post = {'errors': e}
-        return dumps([post for post in curser]), 200
+        return Response(dumps([post for post in curser]),
+                mimetype='application/json', status_code='200')
 api.add_resource(BlogApi, '/api/v1/blog/')
 
 class BlogAmountApi(Resource):
     def get(self, amount):
         data, errors = postAmount_schema.load({'amount': amount})
         if errors:
-            return dumps({'errors': errors}), 400
+            return Response(dumps({'errors': errors}),
+                    mimetype='application/json', status_code='400')
         try:
             curser = db.posts.find({'$query': {},
                 '$orderby': {'_id': -1}}, {"text": 0}).limit(data['amount'])
         except mongoerrors.PyMongoError as e:
             post = {'errors': e}
-        return dumps([post for post in curser]), 200
+        return Response(dumps([post for post in curser]),
+                mimetype='application/json', status_code='200')
 api.add_resource(BlogAmountApi, '/api/v1/blog/<amount>')
 
 class BlogIdApi(Resource):
     def get(self, postId):
         data, errors = post_schema.load({'postId': postId})
         if errors:
-            return dumps({'errors': errors}), 400
+            return Response(dumps({'errors': errors}),
+                    mimetype='application/json', status_code='400')
         try:
             post = db.posts.find_one({'_id': ObjectId(data['postId'])})
         except mongoerrors.PyMongoError as e:
             post = {'errors': e}
-        return dumps(post), 200
+        return Response(dumps(post),
+                mimetype='application/json', status_code='201')
 
     @token_auth.login_required
     def put(self, postId):
@@ -138,33 +147,38 @@ class BlogIdApi(Resource):
         json_data['postId'] = postId
         data, errors = post_schema.load(json_data)
         if errors:
-            return dumps({'errors': errors}), 400
+            return Response(dumps({'errors': errors}),
+                    mimetype='application/json', status_code='400')
         try:
             post = db.posts.update_one({'_id': ObjectId(data['postId'])},
                 {'$set': data})
             post = {'modified count': post.modified_count}
         except mongoerrors.PyMongoError as e:
             post = {'errors': e}
-        return dumps(post), 201
+        return Response(dumps(post),
+                mimetype='application/json', status_code='201')
 
     @token_auth.login_required
     def delete(self, postId):
         data, errors = post_schema.load({'postId': postId})
         if errors:
-            return dumps({'errors': errors}), 400
+            return Response(dumps({'errors': errors}),
+                    mimetype='application/json', status_code='400')
         try:
             post = db.posts.delete_one({'_id': ObjectId(data['postId'])})
             post = post.deleted_count
         except mongoerrors.PyMongoError as e:
             post = {'errors': e}
-        return dumps(post), 201
+        return Response(dumps(post),
+                mimetype='application/json', status_code='201')
 api.add_resource(BlogIdApi,  '/api/v1/blog/id/<postId>')
 
 class BlogAfterIdApi(Resource):
     def get(self, afterId):
         data, errors = post_schema.load({'postId': afterId})
         if errors:
-            return dumps({'errors': errors}), 400
+            return Response(dumps({'errors': errors}),
+                    mimetype='application/json', status_code='400')
         curser = None
         try:
             curser = db.posts.find({'$query': {'_id': {'$gt':
@@ -179,53 +193,67 @@ class BlogTitleApi(Resource):
     def get(self, title):
         data, errors = post_schema.load({'title': title})
         if errors:
-            return dumps({'errors': errors}), 400
+            return Response(dumps({'errors': errors}),
+                    mimetype='application/json', status_code='400')
         try:
             post = db.posts.find_one({'title': data['title']})
+            if post == None:
+                return 404
+
         except mongoerrors.PyMongoError as e:
             post = {'errors': e}
-        return dumps(post), 200
+        return Response(dumps(post),
+                mimetype='application/json', status_code='200')
 
     @token_auth.login_required
     def post(self, title):
         json_data = request.get_json()
+        if(json_data == None):
+            return Response(dumps({'errors': 'POST data not found'}),
+                    mimetype='application/json', status_code='400')
         json_data['date'] = datetime.utcnow().isoformat()
         json_data['title'] = title
         json_data['visable'] = 0
         data, errors = post_schema.load(json_data)
         if errors:
-            return dumps({'errors': errors}), 400
+            return Response(dumps({'errors': errors}),
+                    mimetype='application/json', status_code='400')
         try:
             post = db.posts.insert_one(data).inserted_id
         except mongoerrors.PyMongoError as e:
             post = {'errors': e}
-        return dumps(post), 201
+        return Response(dumps(post),
+                mimetype='application/json', status_code='201')
 
     @token_auth.login_required
     def put(self, title):
         json_data = request.get_json()
         data, errors = post_schema.load(json_data)
         if errors:
-            return dumps({'errors': errors}), 400
+            return Response(dumps({'errors': errors}),
+                    mimetype='application/json', status_code='400')
         try:
             post = db.posts.update_one({'title': data['title']},
                 {'$set': data})
             post = {'modified count': post.modified_count}
         except mongoerrors.PyMongoError as e:
             post = {'errors': e}
-        return dumps(post), 201
+        return Response(dumps(post),
+                mimetype='application/json', status_code='201')
 
     @token_auth.login_required
     def delete(self, title):
         data, errors = post_schema.load({'title': title})
         if errors:
-            return dumps({'errors': errors}), 400
+            return Response(dumps({'errors': errors}),
+                    mimetype='application/json', status_code='400')
         try:
             post = db.posts.delete_one({'title': data['title']})
             post = post.deleted_count
         except mongoerrors.PyMongoError as e:
             post = {'errors': e}
-        return dumps(post), 201
+        return Response(dumps(post),
+                mimetype='application/json', status_code='201')
 api.add_resource(BlogTitleApi,  '/api/v1/blog/title/<title>')
 
 #########################
@@ -240,4 +268,4 @@ def main(path):
 # Misc
 #########################
 if __name__ == "__main__":
-    app.run(debug = True, port = 5000)
+    app.run()
