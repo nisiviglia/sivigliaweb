@@ -135,7 +135,7 @@ class BlogIdApi(Resource):
             return Response(dumps({'errors': errors}),
                     mimetype='application/json')
         try:
-            post = db.posts.find_one({'_id': ObjectId(data['postId'])})
+            post = db.posts.find_one({'_id': ObjectId(data['postId']), 'visable': 1})
         except mongoerrors.PyMongoError as e:
             post = {'errors': e}
         return Response(dumps(post),
@@ -182,7 +182,7 @@ class BlogAfterIdApi(Resource):
         curser = None
         try:
             curser = db.posts.find({'$query': {'_id': {'$gt':
-                ObjectId(data['postId'])}},
+                ObjectId(data['postId'])}, 'visable': 1},
                 '$orderby': {'_id': -1}}, {"text": 0}).limit(20)
         except mongoerrors.PyMongoError as e:
             post = {'errors': e}
@@ -196,7 +196,7 @@ class BlogTitleApi(Resource):
             return Response(dumps({'errors': errors}),
                     mimetype='application/json')
         try:
-            post = db.posts.find_one({'title': data['title']})
+            post = db.posts.find_one({'title': data['title'], 'visable': 1})
             if post == None:
                 return 404
 
