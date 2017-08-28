@@ -7,6 +7,7 @@ from flask_restful import Api, Resource
 from marshmallow import fields, Schema, validate
 from pymongo import errors as mongoerrors, MongoClient
 import jwt
+from werkzeug.datastructures import Headers
 
 #########################
 # Config
@@ -109,8 +110,11 @@ class BlogApi(Resource):
                 '$orderby': {'_id': -1}}, {"text": 0}).limit(MAX_GET_POSTS)
         except mongoerrors.PyMongoError as e:
             post = {'errors': e}
+        h = Headers()
+        h.add("Access-Control-Allow-Origin","*")
         return Response(dumps([post for post in curser]),
-                mimetype='application/json')
+                mimetype='application/json',
+                headers=h)
 api.add_resource(BlogApi, '/api/v1/blog/')
 
 class BlogAmountApi(Resource):
@@ -181,12 +185,13 @@ class BlogAfterIdApi(Resource):
                     mimetype='application/json')
         curser = None
         try:
-            curser = db.posts.find({'$query': {'_id': {'$gt':
+            curser = db.posts.find({'$query': {'_id': {'$lt':
                 ObjectId(data['postId'])}, 'visable': 1},
                 '$orderby': {'_id': -1}}, {"text": 0}).limit(20)
         except mongoerrors.PyMongoError as e:
             post = {'errors': e}
-        return [post for post in curser], 200
+        return Response(dumps([post for post in curser]),
+                mimetype='application/json')
 api.add_resource(BlogAfterIdApi, '/api/v1/blog/id/after/<afterId>')
 
 class BlogTitleApi(Resource):
@@ -198,12 +203,15 @@ class BlogTitleApi(Resource):
         try:
             post = db.posts.find_one({'title': data['title'], 'visable': 1})
             if post == None:
-                return 404
+                return Response(response=None, status='404')
 
         except mongoerrors.PyMongoError as e:
             post = {'errors': e}
+        h = Headers()
+        h.add("Access-Control-Allow-Origin","*")
         return Response(dumps(post),
-                mimetype='application/json')
+                mimetype='application/json',
+                headers=h)
 
     @token_auth.login_required
     def post(self, title):
@@ -255,6 +263,21 @@ class BlogTitleApi(Resource):
         return Response(dumps(post),
                 mimetype='application/json')
 api.add_resource(BlogTitleApi,  '/api/v1/blog/title/<title>')
+
+class PagesApi(Resource):
+    def get(self, page):
+        try:
+            post = db.pages.find_one({'title': page})
+            if post == None:
+                return Response(response=None, status='404')
+        except mongoerrors.PyMongoError as e:
+            post = {'errors': e}
+        h = Headers()
+        h.add("Access-Control-Allow-Origin","*")
+        return Response(dumps(post),
+                mimetype='application/json',
+                headers=h)
+api.add_resource(PagesApi,  '/api/v1/pages/<page>')
 
 #########################
 # Routes
